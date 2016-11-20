@@ -7,6 +7,13 @@ import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import ru.sbt.bit.ood.solid.homework.dao.SalaryReportDao;
+import ru.sbt.bit.ood.solid.homework.dao.impl.db.SalaryReportDaoDb;
+import ru.sbt.bit.ood.solid.homework.domain.SalaryReport;
+import ru.sbt.bit.ood.solid.homework.notifiers.Notifier;
+import ru.sbt.bit.ood.solid.homework.notifiers.impl.mail.MailNotifier;
+import ru.sbt.bit.ood.solid.homework.serializer.impl.HtmlTableSerializer;
+import ru.sbt.bit.ood.solid.homework.util.DateRange;
 
 import javax.mail.MessagingException;
 import javax.mail.internet.MimeMessage;
@@ -26,26 +33,29 @@ import static org.mockito.Mockito.*;
 import static org.powermock.api.mockito.PowerMockito.whenNew;
 
 @RunWith(PowerMockRunner.class)
-@PrepareForTest(SalaryHtmlReportNotifier.class)
+@PrepareForTest(MailNotifier.class)
 public class TestSalaryHtmlReportNotifier {
 
     @Test
     public void test() throws Exception {
-        // mock database related stuff
-        Connection someFakeConnection = mock(Connection.class);
-        ResultSet mockResultSet = getMockedResultSet(someFakeConnection);
-        when(mockResultSet.getString("emp_name")).thenReturn("John Doe", "Jane Dow");
-        when(mockResultSet.getDouble("salary")).thenReturn(100.0, 100.0, 50.0, 50.0);
-        // mock mail related stuff
+        Connection connection = mockConnection();
         MimeMessageHelper mockMimeMessageHelper = getMockedMimeMessageHelper();
 
-        // set up parameters
-        SalaryHtmlReportNotifier notifier = new SalaryHtmlReportNotifier(someFakeConnection);
         LocalDate dateFrom = LocalDate.of(2014, Month.JANUARY, 1);
         LocalDate dateTo = LocalDate.of(2014, Month.DECEMBER, 31);
-        // execute
-        notifier.generateAndSendHtmlSalaryReport("10", dateFrom, dateTo, "somebody@gmail.com");
-        // verify results
+
+        SalaryReportDao salaryReportDao = new SalaryReportDaoDb(connection);
+        SalaryReport report = salaryReportDao
+                .getByDepartmentIdAndDateRange("10", DateRange.of(dateFrom, dateTo));
+
+        Notifier notifier = new MailNotifier(
+                "Monthly department salary report",
+                "somebody@gmail.com",
+                true, "mail.google.com"
+        );
+
+        notifier.doNotify(new HtmlTableSerializer<>().serialize(report));
+
         String expectedReportPath = "src/test/resources/expectedReport.html";
         assertActualReportEqualsTo(mockMimeMessageHelper, expectedReportPath);
     }
@@ -79,4 +89,11 @@ public class TestSalaryHtmlReportNotifier {
         return mockMimeMessageHelper;
     }
 
+    private Connection mockConnection() throws Exception {
+        Connection someFakeConnection = mock(Connection.class);
+        ResultSet mockResultSet = getMockedResultSet(someFakeConnection);
+        when(mockResultSet.getString("emp_name")).thenReturn("John Doe", "Jane Dow");
+        when(mockResultSet.getDouble("salary")).thenReturn(100.0, 50.0);
+        return someFakeConnection;
+    }
 }
